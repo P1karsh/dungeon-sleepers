@@ -249,7 +249,7 @@
         <button id="lights-out" class="primary">Lights out</button>
         <button id="wake-up" class="hidden">Wake up</button>
       </div>
-      <p class="subtitle">On time means within 30 minutes of your bedtime. Only last night counts, so one late night never ruins your week.</p>
+      <p class="subtitle">On time means up to 30 minutes after your bedtime, and turning in early always counts. Only last night counts, so one late night never ruins your week.</p>
     </div>
 
     <div id="recap" class="card recap hidden"></div>
@@ -261,7 +261,8 @@
 // Setup
 // ---------------------------------------------------------------
 const FRIENDS = ['Mira', 'Sam', 'Jo'];
-const ON_TIME_WINDOW = 30;     // minutes either side of bedtime
+const ON_TIME_WINDOW = 30;     // minutes after bedtime that still count
+const EARLY_WINDOW = 180;      // how early you can turn in and still count
 const FOCUS_MINUTES = 25;
 const DEMO_SECONDS = 5;
 const SAVE_KEY = 'dungeon-sleepers-v1';
@@ -277,7 +278,8 @@ let state = {
   bonus: false,       // true if the whole camp slept on time
   fire: 0.5,          // 0 to 1, how big the campfire is
   bedtime: '23:00',
-  tonight: null       // set after "Lights out", cleared on "Wake up"
+  tonight: null,      // set after "Lights out", cleared on "Wake up"
+  fight: null         // { taskId, endsAt } while a focus session runs
 };
 
 try {
@@ -450,7 +452,7 @@ function drawCamp() {
   drawNightSky(ctx);
 
   // the fire shows more rows the happier the camp is
-  const visibleRows = Math.min(6, Math.max(1, Math.round(state.fire * 4)) + 1);
+  const visibleRows = 2 + Math.round(state.fire * 4);   // 2 (embers) to 6 (roaring)
   drawSprite(ctx, SPRITES.fire.slice(-visibleRows), 64, 62 - visibleRows * 4, 4);
 
   // you plus the three friends, sitting around the fire
@@ -538,8 +540,9 @@ function targetTask(event) {
 }
 
 // ----- focus timer -----
+// The fight stores when it ends rather than counting ticks, because browsers
+// slow down timers in background tabs (and people switch tabs to do the work).
 let timerId = null;
-let secondsLeft = 0;
 
 function formatClock(totalSeconds) {
   const m = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
@@ -557,28 +560,45 @@ function startFight() {
     $('#message').textContent = 'Add and target a monster first.';
     return;
   }
-  if (timerId) return;
+  if (state.fight) return;
 
-  secondsLeft = $('#demo-mode').checked ? DEMO_SECONDS : FOCUS_MINUTES * 60;
-  $('#clock').textContent = formatClock(secondsLeft);
-  $('#message').textContent = `Fighting ${target.name}... stay focused.`;
+  const seconds = $('#demo-mode').checked ? DEMO_SECONDS : FOCUS_MINUTES * 60;
+  state.fight = { taskId: target.id, endsAt: Date.now() + seconds * 1000 };
+  save();
+  runTimer();
+}
 
-  timerId = setInterval(() => {
-    secondsLeft--;
+function runTimer() {
+  const task = state.tasks.find((t) => t.id === state.fight.taskId);
+  if (!task) {
+    state.fight = null;
+    resetClock();
+    return;
+  }
+  $('#message').textContent = `Fighting ${task.name}... stay focused.`;
+
+  const tick = () => {
+    const secondsLeft = Math.max(0, Math.ceil((state.fight.endsAt - Date.now()) / 1000));
     $('#clock').textContent = formatClock(secondsLeft);
 
     if (secondsLeft <= 0) {
       clearInterval(timerId);
       timerId = null;
-      finishFight(target);
+      state.fight = null;
+      finishFight(task);
     }
-  }, 1000);
+  };
+
+  tick();
+  if (state.fight) timerId = setInterval(tick, 250);
 }
 
 function retreat() {
-  if (!timerId) return;
+  if (!state.fight) return;
   clearInterval(timerId);
   timerId = null;
+  state.fight = null;
+  save();
   resetClock();
   $('#message').textContent = 'You retreated. No damage dealt.';
 }
@@ -609,16 +629,30 @@ function toMinutes(time) {
   return hours * 60 + minutes;
 }
 
-function slepOnTime() {
+// Minutes from your bedtime to now: negative = early, positive = late.
+// Wrapped into -12h..+12h so bedtimes around midnight work.
+function minutesPastBedtime() {
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  let offset = nowMinutes - toMinutes(state.bedtime);
+  if (offset >= 720) offset -= 1440;
+  if (offset < -720) offset += 1440;
+  return offset;
+}
+
+// Going to bed early is fine (more sleep is never punished), but a check-in
+// in the middle of the afternoon is treated as a misclick, not an early night.
+function sleptOnTime() {
   const forced = $('#force-result').value;
   if (forced === 'on-time') return true;
   if (forced === 'late') return false;
 
-  const now = new Date();
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  let gap = Math.abs(nowMinutes - toMinutes(state.bedtime));
-  gap = Math.min(gap, 1440 - gap);   // handles bedtimes around midnight
-  return gap <= ON_TIME_WINDOW;
+  const offset = minutesPastBedtime();
+  return offset >= -EARLY_WINDOW && offset <= ON_TIME_WINDOW;
+}
+
+function turnedInEarly() {
+  return $('#force-result').value === 'auto' && minutesPastBedtime() < -ON_TIME_WINDOW;
 }
 
 function renderCamp() {
@@ -627,10 +661,12 @@ function renderCamp() {
   if (!tonight) {
     $('#party').innerHTML = '<li>Waiting for lights out.</li>';
   } else {
-    const rows = [{ name: 'You', onTime: tonight.you }, ...tonight.friends.map((f) => ({ name: f.name, onTime: f.onTime }))];
-    $('#party').innerHTML = rows.map((r) =>
-      `<li class="${r.onTime ? 'on-time' : 'late'}">${r.name}: ${r.onTime ? 'in bed on time' : 'still up'}</li>`
-    ).join('');
+    const you = { name: 'You', onTime: tonight.you, early: tonight.early };
+    const rows = [you, ...tonight.friends];
+    $('#party').innerHTML = rows.map((r) => {
+      const status = r.early ? 'turned in early' : r.onTime ? 'in bed on time' : 'still up';
+      return `<li class="${r.onTime ? 'on-time' : 'late'}">${r.name}: ${status}</li>`;
+    }).join('');
   }
 
   $('#lights-out').classList.toggle('hidden', Boolean(tonight));
@@ -642,7 +678,8 @@ function renderCamp() {
 
 function lightsOut() {
   state.tonight = {
-    you: slepOnTime(),
+    you: sleptOnTime(),
+    early: turnedInEarly(),
     // the friends are random for now, real players would come from a backend
     friends: FRIENDS.map((name) => ({ name, onTime: Math.random() < 0.65 }))
   };
@@ -695,7 +732,7 @@ $('#add-task').addEventListener('click', addTask);
 $('#task-list').addEventListener('click', targetTask);
 $('#start').addEventListener('click', startFight);
 $('#retreat').addEventListener('click', retreat);
-$('#demo-mode').addEventListener('change', () => { if (!timerId) resetClock(); });
+$('#demo-mode').addEventListener('change', () => { if (!state.fight) resetClock(); });
 $('#lights-out').addEventListener('click', lightsOut);
 $('#wake-up').addEventListener('click', wakeUp);
 
@@ -707,6 +744,7 @@ $('#bedtime').addEventListener('change', (e) => {
 
 renderDungeon();
 renderCamp();
+if (state.fight) runTimer();
 </script>
 </body>
 </html>
