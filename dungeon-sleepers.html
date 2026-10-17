@@ -76,8 +76,20 @@
     h1 { font-size: 18px; margin: 8px 0 4px; color: var(--pink); }
     h2 { font-size: 12px; margin: 0 0 10px; }
 
+    p { margin: 0 0 8px; }
+    code { font-family: inherit; color: var(--mint); }
+
     .subtitle { color: var(--dim); margin: 0 0 14px; }
-    .hidden { display: none; }
+    .hidden { display: none !important; }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
 
     /* ---------- Controls ---------- */
     button, input, select { font: inherit; color: var(--ink); }
@@ -91,6 +103,8 @@
     }
 
     button:hover { border-color: var(--pink); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.small { padding: 4px 8px; font-size: 18px; }
 
     button:focus-visible,
     input:focus-visible,
@@ -111,16 +125,27 @@
       border-color: var(--mint);
     }
 
+    button[aria-pressed="true"] { border-color: var(--mint); color: var(--mint); }
+
     input, select {
       background: var(--bg);
       border: 3px solid var(--line);
       padding: 6px 8px;
       border-radius: 0;
+      max-width: 100%;
     }
 
     /* ---------- Layout pieces ---------- */
-    .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .tabs, .toggles { display: flex; gap: 8px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .row + .row { margin-top: 8px; }
 
     .card {
       background: var(--panel);
@@ -136,6 +161,7 @@
       image-rendering: pixelated;
       background: #0f0b2b;
       border: 3px solid var(--line);
+      margin-bottom: 12px;
     }
 
     .stat { display: flex; justify-content: space-between; color: var(--dim); }
@@ -150,6 +176,9 @@
     .bar.energy .bar-fill { background: var(--mint); }
 
     /* ---------- Tasks ---------- */
+    #task-name { flex: 1 1 140px; min-width: 0; }
+    #task-minutes { width: 80px; }
+
     .task {
       display: flex;
       gap: 8px;
@@ -158,7 +187,10 @@
       border-top: 2px dashed var(--line);
       padding: 8px 0;
     }
-    .task-name { flex: 1; }
+    .task:first-child { margin-top: 10px; }
+    .task-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .task-monster { display: block; color: var(--dim); font-size: 18px; }
+    .task-hp { white-space: nowrap; }
     .task.targeted .task-name { color: var(--pink); }
 
     #clock {
@@ -172,8 +204,39 @@
     .party { padding: 0; margin: 8px 0; list-style: none; }
     .on-time { color: var(--mint); }
     .late { color: var(--ember); }
+    .waiting { color: var(--dim); }
+
+    .camp-code {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 14px;
+      color: var(--ember);
+      letter-spacing: 2px;
+    }
+    #camper-name, #join-code { flex: 1 1 120px; min-width: 0; }
+    #join-code { text-transform: uppercase; }
 
     .recap { border-left: 6px solid var(--pink); }
+    .recap-line { margin-bottom: 2px; }
+
+    /* ---------- Sleep history ---------- */
+    .history {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      align-items: end;
+      margin: 8px 0;
+    }
+    .night { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .night-blocks { display: flex; flex-direction: column-reverse; gap: 2px; min-height: 54px; }
+    .block { width: 22px; height: 12px; border: 2px solid var(--line); }
+    .block.you { background: var(--pink); border-color: var(--pink); }
+    .block.friend { background: var(--mint); border-color: var(--mint); }
+    .night-day { color: var(--dim); font-size: 17px; }
+    .night-you { font-size: 17px; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--dim); font-size: 18px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .block { width: 14px; height: 10px; }
 
     @media (prefers-reduced-motion: no-preference) {
       .pulse { animation: pulse 1.2s steps(2) infinite; }
@@ -187,14 +250,20 @@
   <h1>Dungeon Sleepers</h1>
   <p class="subtitle">Beat tasks by day. Make camp by night. Sleep well and your hero hits harder.</p>
 
-  <div class="tabs">
-    <button id="tab-day" class="active">Dungeon</button>
-    <button id="tab-camp">Camp</button>
+  <div class="topbar">
+    <div class="tabs">
+      <button id="tab-day" class="active">Dungeon</button>
+      <button id="tab-camp">Camp</button>
+    </div>
+    <div class="toggles">
+      <button id="sound-toggle" class="small" aria-pressed="false">Sound: off</button>
+      <button id="music-toggle" class="small" aria-pressed="false">Music: off</button>
+    </div>
   </div>
 
   <!-- ===== Daytime: the dungeon ===== -->
   <section id="day">
-    <canvas id="dungeon-canvas" width="160" height="80"></canvas>
+    <canvas id="dungeon-canvas" width="160" height="80" role="img" aria-label="Your hero facing the targeted monster"></canvas>
 
     <div class="card">
       <div class="stat"><span>Hero energy</span><span id="energy-text"></span></div>
@@ -205,10 +274,10 @@
 
     <div class="card">
       <h2>Summon a task</h2>
-      <form class="row" onsubmit="return false">
+      <form id="task-form" class="row">
         <input id="task-name" placeholder="Essay intro" maxlength="40" aria-label="Task name">
-        <input id="task-minutes" type="number" value="50" min="10" max="300" step="5" style="width: 80px" aria-label="Minutes of work">
-        <button id="add-task" class="primary" type="button">Add monster</button>
+        <input id="task-minutes" type="number" value="50" min="10" max="300" step="5" aria-label="Minutes of work">
+        <button class="primary" type="submit">Add monster</button>
       </form>
       <div id="task-list"></div>
       <p id="no-tasks" class="subtitle hidden">No monsters yet. Add a task to start a fight.</p>
@@ -228,7 +297,13 @@
 
   <!-- ===== Night time: the camp ===== -->
   <section id="camp" class="hidden">
-    <canvas id="camp-canvas" width="160" height="80"></canvas>
+    <canvas id="camp-canvas" width="160" height="80" role="img" aria-label="Your camp around the fire"></canvas>
+
+    <div id="recap" class="card recap hidden">
+      <h2>Morning recap</h2>
+      <div id="recap-lines"></div>
+      <button id="skip-cutscene" class="small hidden">Skip</button>
+    </div>
 
     <div class="card">
       <h2>Tonight's camp</h2>
@@ -252,7 +327,48 @@
       <p class="subtitle">On time means up to 30 minutes after your bedtime, and turning in early always counts. Only last night counts, so one late night never ruins your week.</p>
     </div>
 
-    <div id="recap" class="card recap hidden"></div>
+    <div class="card">
+      <h2>Your camp</h2>
+
+      <div id="camp-offline">
+        <p>You're camping with practice friends (Mira, Sam and Jo), who make it to bed on time about two nights in three.</p>
+        <p class="subtitle">To camp with real friends, run <code>node server.js</code> and open the game from that server.</p>
+      </div>
+
+      <div id="camp-join" class="hidden">
+        <p>Until you join a camp, Mira, Sam and Jo keep you company. Start a camp and share the code, or join a friend's.</p>
+        <div class="row">
+          <input id="camper-name" placeholder="Your name" maxlength="20" aria-label="Your name">
+          <button id="create-camp" class="primary">Start a camp</button>
+        </div>
+        <div class="row">
+          <input id="join-code" placeholder="Camp code" maxlength="5" aria-label="Camp code">
+          <button id="join-camp">Join</button>
+        </div>
+      </div>
+
+      <div id="camp-joined" class="hidden">
+        <p>Camp code <span id="camp-code" class="camp-code"></span></p>
+        <p id="camp-members"></p>
+        <div class="row">
+          <button id="copy-invite" class="small">Copy invite link</button>
+          <button id="leave-camp" class="small">Leave camp</button>
+        </div>
+      </div>
+
+      <p id="camp-message" class="subtitle"></p>
+    </div>
+
+    <div class="card">
+      <h2>Last 7 nights</h2>
+      <div id="history"></div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="block you"></i>You on time</span>
+        <span><i class="block friend"></i>Friend on time</span>
+        <span><i class="block"></i>Late or missing</span>
+      </div>
+      <p class="subtitle">Just for looking back. Only last night changes the game.</p>
+    </div>
   </section>
 </main>
 
@@ -265,7 +381,14 @@ const ON_TIME_WINDOW = 30;     // minutes after bedtime that still count
 const EARLY_WINDOW = 180;      // how early you can turn in and still count
 const FOCUS_MINUTES = 25;
 const DEMO_SECONDS = 5;
+const HISTORY_NIGHTS = 7;
+const CAMP_POLL_MS = 15000;
 const SAVE_KEY = 'dungeon-sleepers-v1';
+
+// The shared camp needs the game to be served by server.js. Opened as a
+// plain file, it falls back to the practice friends.
+const API = location.protocol.startsWith('http') ? '/api' : null;
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -279,7 +402,11 @@ let state = {
   fire: 0.5,          // 0 to 1, how big the campfire is
   bedtime: '23:00',
   tonight: null,      // set after "Lights out", cleared on "Wake up"
-  fight: null         // { taskId, endsAt } while a focus session runs
+  fight: null,        // { taskId, endsAt } while a focus session runs
+  history: [],        // { night, you, early, onTimeCount, campSize }, newest last
+  sound: false,
+  music: false,
+  camp: null          // { code, playerId, secret, name } once you join a real camp
 };
 
 try {
@@ -297,11 +424,26 @@ function save() {
 
 function escapeHtml(text) {
   const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-  return text.replace(/[&<>"]/g, (ch) => map[ch]);
+  return String(text).replace(/[&<>"]/g, (ch) => map[ch]);
 }
 
 function getTarget() {
   return state.tasks.find((task) => task.id === state.targetId);
+}
+
+// The night a check-in belongs to. Anything before noon still counts as the
+// previous evening, so going to bed at 1am is part of last night.
+function nightKey(date) {
+  const day = new Date(date);
+  if (day.getHours() < 12) day.setDate(day.getDate() - 1);
+  const month = String(day.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(day.getDate()).padStart(2, '0');
+  return `${day.getFullYear()}-${month}-${dayOfMonth}`;
+}
+
+function weekdayOf(night) {
+  const [year, month, day] = night.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: 'short' });
 }
 
 // ---------------------------------------------------------------
@@ -343,6 +485,14 @@ const SPRITES = {
     '.oooooo.',
     'bbbbbbbb'
   ],
+  fireFlicker: [
+    '....y...',
+    '...oyy..',
+    '.o.ooy..',
+    '.oooooy.',
+    '.oooooo.',
+    'bbbbbbbb'
+  ],
   sleeper: [
     'hh......',
     'sssqqqqq',
@@ -361,12 +511,39 @@ const SPRITES = {
     '.mm...',
     '..mmm.'
   ],
+  sun: [
+    '..oooo..',
+    '.oyyyyo.',
+    'oyyyyyyo',
+    'oyyyyyyo',
+    '.oyyyyo.',
+    '..oooo..'
+  ],
+  sparkle: [
+    '.y.',
+    'yyy',
+    '.y.'
+  ],
+  poof: [
+    '.w...w..',
+    '..w.w...',
+    'ww...ww.',
+    '..w.w...',
+    '.w...w..'
+  ],
   bat: [
     'v......v',
     'vv.vv.vv',
     'vvvvvvvv',
     '.vrvvrv.',
     '..v..v..'
+  ],
+  batFlap: [
+    '........',
+    '...vv...',
+    'vvvvvvvv',
+    'vvrvvrvv',
+    'v.v..v.v'
   ],
   mushroom: [
     '..rrrr..',
@@ -394,14 +571,35 @@ const COLORS = {
   q: '#6b5bd6', z: '#a99fd6', m: '#fff3a0', v: '#9a7bff', r: '#ff6b8a'
 };
 
+// used to flash a monster white when it gets hit
+const ALL_WHITE = Object.fromEntries(Object.keys(COLORS).map((key) => [key, '#ffffff']));
+
 // each task becomes one of these, picked by its id. lift = how high it floats
 const MONSTERS = [
-  { sprite: SPRITES.slime, lift: 0 },
-  { sprite: SPRITES.ghost, lift: 8 },
-  { sprite: SPRITES.bat, lift: 14 },
-  { sprite: SPRITES.mushroom, lift: 0 },
-  { sprite: SPRITES.skull, lift: 0 }
+  { kind: 'Slime', frames: [SPRITES.slime], lift: 0 },
+  { kind: 'Ghost', frames: [SPRITES.ghost], lift: 8 },
+  { kind: 'Bat', frames: [SPRITES.bat, SPRITES.batFlap], lift: 14 },
+  { kind: 'Mushroom', frames: [SPRITES.mushroom], lift: 0 },
+  { kind: 'Skull', frames: [SPRITES.skull], lift: 0 }
 ];
+
+const MONSTER_MOODS = [
+  'Sleepy', 'Grumpy', 'Soggy', 'Sneaky', 'Wobbly', 'Dramatic',
+  'Snoring', 'Fluffy', 'Smug', 'Lazy', 'Cranky'
+];
+
+function monsterFor(task) {
+  return MONSTERS[task.id % MONSTERS.length];
+}
+
+function monsterName(task) {
+  const mood = MONSTER_MOODS[(task.id * 7) % MONSTER_MOODS.length];
+  return `${mood} ${monsterFor(task).kind}`;
+}
+
+const STARS = [[12, 10], [40, 22], [75, 8], [110, 18], [140, 6], [150, 40], [8, 50], [95, 35]];
+const SEATS = [10, 36, 100, 126];
+const HAT_COLORS = ['#b58cff', '#ffd166', '#7fd0ff', '#c8a2ff'];
 
 function drawSprite(ctx, rows, x, y, size, colorOverrides = {}) {
   const palette = { ...COLORS, ...colorOverrides };
@@ -416,72 +614,313 @@ function drawSprite(ctx, rows, x, y, size, colorOverrides = {}) {
   });
 }
 
-function drawNightSky(ctx) {
-  ctx.fillStyle = '#0f0b2b';
-  ctx.fillRect(0, 0, 160, 80);
+function mixColors(from, to, amount) {
+  const a = parseInt(from.slice(1), 16);
+  const b = parseInt(to.slice(1), 16);
+  const channel = (shift) => Math.round(((a >> shift) & 255) * (1 - amount) + ((b >> shift) & 255) * amount);
+  return '#' + [16, 8, 0].map((shift) => channel(shift).toString(16).padStart(2, '0')).join('');
+}
 
+// dawn goes from 0 (deep night) to 1 (sunrise), used by the morning cutscene
+function drawSky(ctx, t, dawn = 0) {
+  for (let band = 0; band < 8; band++) {
+    const dawnColor = mixColors('#3a2a7a', '#ffb86b', band / 7);
+    ctx.fillStyle = mixColors('#0f0b2b', dawnColor, dawn);
+    ctx.fillRect(0, band * 8, 160, 8);
+  }
+
+  ctx.globalAlpha = 1 - dawn;
   ctx.fillStyle = '#4a3f94';
-  const stars = [[12, 10], [40, 22], [75, 8], [110, 18], [140, 6], [150, 40], [8, 50], [95, 35]];
-  stars.forEach(([x, y]) => ctx.fillRect(x, y, 2, 2));
+  STARS.forEach(([x, y], i) => {
+    const twinkleOff = (Math.floor(t * 2) + i * 3) % 7 === 0;
+    if (!twinkleOff) ctx.fillRect(x, y, 2, 2);
+  });
+  drawSprite(ctx, SPRITES.moon, 74, 6 + Math.round(dawn * 60), 2);
+  ctx.globalAlpha = 1;
 
-  drawSprite(ctx, SPRITES.moon, 136, 6, 2);
+  if (dawn > 0) drawSprite(ctx, SPRITES.sun, 18, Math.round(64 - dawn * 44), 3);
 
-  ctx.fillStyle = '#241c52';
+  ctx.fillStyle = mixColors('#241c52', '#3a2f6e', dawn);
   ctx.fillRect(0, 62, 160, 18);   // ground
 }
 
-function drawDungeon() {
+// ----- dungeon scene -----
+let hitEffect = null;      // { damage, startedAt } after a focus session lands
+let defeatEffect = null;   // { startedAt } when a monster goes poof
+
+function drawDungeon(t, now) {
   const ctx = $('#dungeon-canvas').getContext('2d');
-  drawNightSky(ctx);
+  drawSky(ctx, t);
+
+  const bob = Math.floor(t * 2) % 2;
+  const lunge = state.fight && Math.floor(t * 2) % 4 === 0 ? 3 : 0;
 
   // tired heroes look faded
   ctx.globalAlpha = state.energy >= 100 ? 1 : 0.55;
-  drawSprite(ctx, SPRITES.hero, 24, 22, 5);
+  drawSprite(ctx, SPRITES.hero, 24 + lunge, 22 + bob, 5);
   ctx.globalAlpha = 1;
 
   const target = getTarget();
   if (target) {
-    const monster = MONSTERS[target.id % MONSTERS.length];
-    const top = 62 - monster.sprite.length * 6 - monster.lift;
-    drawSprite(ctx, monster.sprite, 100, top, 6);
+    const monster = monsterFor(target);
+    const frame = monster.frames[Math.floor(t * 4) % monster.frames.length];
+    const float = monster.lift ? Math.round(Math.sin(t * 2) * 2) : Math.floor(t * 1.5) % 2;
+    let x = 100;
+    let colors = {};
+
+    const hitAge = hitEffect ? (now - hitEffect.startedAt) / 1000 : Infinity;
+    if (hitAge < 0.6) {
+      x += Math.floor(hitAge * 20) % 2 ? 2 : -2;
+      colors = ALL_WHITE;
+    }
+
+    const top = 62 - frame.length * 6 - monster.lift + float;
+    drawSprite(ctx, frame, x, top, 6, colors);
+  }
+
+  if (defeatEffect) {
+    const age = (now - defeatEffect.startedAt) / 1000;
+    if (age < 0.8) {
+      ctx.globalAlpha = 1 - age / 0.8;
+      drawSprite(ctx, SPRITES.poof, 100, 26 - Math.round(age * 10), 6);
+      ctx.globalAlpha = 1;
+    } else {
+      defeatEffect = null;
+    }
+  }
+
+  if (hitEffect) {
+    const age = (now - hitEffect.startedAt) / 1000;
+    if (age < 1.2) {
+      ctx.font = '8px "Press Start 2P"';
+      ctx.fillStyle = '#ff9ec4';
+      ctx.fillText(`-${hitEffect.damage}`, 88, 20 - Math.round(age * 8));
+    } else {
+      hitEffect = null;
+    }
   }
 }
 
-function drawCamp() {
+// ----- camp scene -----
+function drawFire(ctx, fire, t) {
+  const sprite = Math.floor(t * 4) % 2 ? SPRITES.fireFlicker : SPRITES.fire;
+  const visibleRows = 2 + Math.round(fire * 4);   // 2 (embers) to 6 (roaring)
+  drawSprite(ctx, sprite.slice(-visibleRows), 64, 62 - visibleRows * 4, 4);
+}
+
+// pose is 'asleep', 'awake', 'phone' (still up) or 'refreshed' (just woke up well)
+function drawCamper(ctx, seat, pose, t) {
+  const x = SEATS[seat];
+  const colors = { h: HAT_COLORS[seat] };
+
+  if (pose === 'asleep') {
+    drawSprite(ctx, SPRITES.sleeper, x, 62 - SPRITES.sleeper.length * 3, 3, colors);
+    const drift = Math.floor((t * 4 + seat * 3) % 8);
+    drawSprite(ctx, SPRITES.zzz, x + 4, 40 - drift, 2);
+    return;
+  }
+
+  drawSprite(ctx, SPRITES.hero, x, 62 - SPRITES.hero.length * 3, 3, colors);
+
+  if (pose === 'phone') {
+    // a little phone glowing in their hands
+    ctx.globalAlpha = Math.floor(t * 3) % 2 ? 1 : 0.6;
+    ctx.fillStyle = '#7fd0ff';
+    ctx.fillRect(x + 9, 52, 5, 3);
+    ctx.globalAlpha = 1;
+  }
+  if (pose === 'refreshed') {
+    drawSprite(ctx, SPRITES.sparkle, x + 9, 28 - (Math.floor(t * 3) % 2), 2);
+  }
+}
+
+function nightPose(camper) {
+  if (camper.onTime === true) return 'asleep';
+  if (camper.onTime === false) return 'phone';
+  return 'awake';
+}
+
+function drawCamp(t, now) {
   const ctx = $('#camp-canvas').getContext('2d');
-  drawNightSky(ctx);
 
-  // the fire shows more rows the happier the camp is
-  const visibleRows = 2 + Math.round(state.fire * 4);   // 2 (embers) to 6 (roaring)
-  drawSprite(ctx, SPRITES.fire.slice(-visibleRows), 64, 62 - visibleRows * 4, 4);
+  if (cutscene) {
+    drawCutscene(ctx, now);
+    return;
+  }
 
-  // you plus the three friends, sitting around the fire
-  const seats = [10, 36, 100, 126];
-  const hatColors = ['#b58cff', '#ffd166', '#7fd0ff', '#c8a2ff'];
-  const tonight = state.tonight;
-  const campers = [
-    tonight ? tonight.you : null,
-    ...FRIENDS.map((name, i) => (tonight ? tonight.friends[i].onTime : null))
-  ];
+  drawSky(ctx, t);
+  drawFire(ctx, state.fire, t);
+  getCampers().forEach((camper, seat) => drawCamper(ctx, seat, nightPose(camper), t));
+}
 
-  campers.forEach((onTime, i) => {
-    const x = seats[i];
-    const colors = { h: hatColors[i] };
+// ----- morning cutscene -----
+// The sky turns to dawn, each camper wakes in turn, the fire settles at its
+// new size, and the recap lines appear one by one.
+let cutscene = null;
 
-    if (onTime === true) {
-      // asleep: lying down with a blanket and a floating z
-      drawSprite(ctx, SPRITES.sleeper, x, 62 - SPRITES.sleeper.length * 3, 3, colors);
-      drawSprite(ctx, SPRITES.zzz, x + 4, 40, 2);
-    } else {
-      drawSprite(ctx, SPRITES.hero, x, 62 - SPRITES.hero.length * 3, 3, colors);
+const DAWN_SECONDS = 2.5;
+const LINE_SECONDS = 0.9;
 
-      if (onTime === false) {
-        // still up: a little phone glowing in their hands
-        ctx.fillStyle = '#7fd0ff';
-        ctx.fillRect(x + 9, 52, 5, 3);
-      }
-    }
+function startCutscene(campers, fireFrom, fireTo, lines) {
+  $('#recap').classList.remove('hidden');
+  $('#recap-lines').innerHTML = '';
+  cutscene = { startedAt: performance.now(), campers, fireFrom, fireTo, lines, shownLines: 0 };
+
+  if (reduceMotion) {
+    endCutscene();
+    return;
+  }
+  $('#skip-cutscene').classList.remove('hidden');
+}
+
+function showRecapLines(count) {
+  $('#recap-lines').innerHTML = cutscene.lines.slice(0, count)
+    .map((line) => `<div class="recap-line">${escapeHtml(line)}</div>`).join('');
+  cutscene.shownLines = count;
+}
+
+function endCutscene() {
+  if (!cutscene) return;
+  showRecapLines(cutscene.lines.length);
+  $('#skip-cutscene').classList.add('hidden');
+  cutscene = null;
+}
+
+function drawCutscene(ctx, now) {
+  const elapsed = (now - cutscene.startedAt) / 1000;
+  const t = now / 1000;
+  const clamp = (value) => Math.min(1, Math.max(0, value));
+
+  drawSky(ctx, t, clamp(elapsed / DAWN_SECONDS));
+
+  const fireProgress = clamp((elapsed - 3.5) / 1.5);
+  drawFire(ctx, cutscene.fireFrom + (cutscene.fireTo - cutscene.fireFrom) * fireProgress, t);
+
+  // on-time campers get up refreshed, late ones finally doze off at dawn
+  cutscene.campers.forEach((camper, seat) => {
+    const awakeNow = elapsed > DAWN_SECONDS + seat * 0.6;
+    if (!awakeNow) drawCamper(ctx, seat, nightPose(camper), t);
+    else drawCamper(ctx, seat, camper.onTime ? 'refreshed' : 'asleep', t);
   });
+
+  const linesDue = Math.min(cutscene.lines.length, Math.floor((elapsed - 0.8) / LINE_SECONDS) + 1);
+  if (linesDue > cutscene.shownLines) showRecapLines(linesDue);
+
+  const totalSeconds = Math.max(6, 0.8 + cutscene.lines.length * LINE_SECONDS + 1);
+  if (elapsed > totalSeconds) endCutscene();
+}
+
+// ----- animation loop -----
+// Redraws about 10 times a second, which suits the chunky pixel style.
+let lastFrame = -1;
+
+function animate(now) {
+  const frame = Math.floor(now / 100);
+  if (frame !== lastFrame) {
+    lastFrame = frame;
+    const t = reduceMotion ? 0 : now / 1000;
+    if ($('#camp').classList.contains('hidden')) drawDungeon(t, now);
+    else drawCamp(t, now);
+  }
+  requestAnimationFrame(animate);
+}
+
+// ---------------------------------------------------------------
+// Sound and music (made with the Web Audio API, no sound files)
+// ---------------------------------------------------------------
+let audioContext = null;
+
+function getAudio() {
+  if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioContext.state === 'suspended') audioContext.resume();
+  return audioContext;
+}
+
+const note = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
+
+function tone(frequency, delay, duration, { type = 'square', volume = 0.04, slideTo = null } = {}) {
+  const ctx = getAudio();
+  const start = ctx.currentTime + delay;
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  if (slideTo) oscillator.frequency.exponentialRampToValueAtTime(slideTo, start + duration);
+
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+  oscillator.connect(gain).connect(ctx.destination);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.05);
+}
+
+const SOUNDS = {
+  start: () => [72, 76, 79].forEach((n, i) => tone(note(n), i * 0.08, 0.12)),
+  hit: () => {
+    tone(220, 0, 0.18, { type: 'sawtooth', slideTo: 70 });
+    tone(note(60), 0.05, 0.1);
+  },
+  defeat: () => [72, 76, 79, 84].forEach((n, i) => tone(note(n), i * 0.1, 0.2)),
+  retreat: () => tone(note(67), 0, 0.25, { slideTo: note(55) }),
+  lightsOut: () => [79, 76, 72, 67].forEach((n, i) => tone(note(n), i * 0.25, 0.45, { type: 'triangle', volume: 0.06 })),
+  wake: () => [67, 72, 76, 79, 84].forEach((n, i) => tone(note(n), i * 0.15, 0.35, { type: 'triangle', volume: 0.06 }))
+};
+
+function playSound(name) {
+  if (!state.sound) return;
+  try {
+    SOUNDS[name]();
+  } catch (err) {}
+}
+
+// a gentle lullaby: arpeggios over C, Am, F and G
+const MUSIC_CHORDS = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]];
+const ARPEGGIO = [0, 1, 2, 1];
+let musicTimer = null;
+let musicStep = 0;
+
+function playMusicStep() {
+  const chord = MUSIC_CHORDS[Math.floor(musicStep / 4) % MUSIC_CHORDS.length];
+  tone(note(chord[ARPEGGIO[musicStep % 4]] + 12), 0, 0.5, { type: 'triangle', volume: 0.025 });
+  if (musicStep % 4 === 0) tone(note(chord[0] - 12), 0, 1.5, { type: 'sine', volume: 0.05 });
+  musicStep++;
+}
+
+function startMusic() {
+  if (musicTimer || !state.music || document.hidden) return;
+  try {
+    getAudio();
+    musicTimer = setInterval(playMusicStep, 420);
+  } catch (err) {}
+}
+
+function stopMusic() {
+  clearInterval(musicTimer);
+  musicTimer = null;
+}
+
+function renderToggles() {
+  $('#sound-toggle').textContent = `Sound: ${state.sound ? 'on' : 'off'}`;
+  $('#sound-toggle').setAttribute('aria-pressed', state.sound);
+  $('#music-toggle').textContent = `Music: ${state.music ? 'on' : 'off'}`;
+  $('#music-toggle').setAttribute('aria-pressed', state.music);
+}
+
+function toggleSound() {
+  state.sound = !state.sound;
+  save();
+  renderToggles();
+  playSound('start');
+}
+
+function toggleMusic() {
+  state.music = !state.music;
+  save();
+  renderToggles();
+  if (state.music) startMusic();
+  else stopMusic();
 }
 
 // ---------------------------------------------------------------
@@ -504,22 +943,22 @@ function renderDungeon() {
     const isTargeted = task.id === state.targetId;
     return `
       <div class="task ${isTargeted ? 'targeted' : ''}">
-        <span class="task-name">
+        <div class="task-name">
           ${escapeHtml(task.name)}
+          <span class="task-monster">${monsterName(task)}</span>
           <div class="bar"><i class="bar-fill" style="width: ${percent}%"></i></div>
-        </span>
-        <span>${Math.round(task.hp)}/${task.max}</span>
-        <button data-id="${task.id}">${isTargeted ? 'Targeted' : 'Target'}</button>
+        </div>
+        <span class="task-hp">${Math.round(task.hp)}/${task.max}</span>
+        <button class="small" data-id="${task.id}">${isTargeted ? 'Targeted' : 'Target'}</button>
       </div>`;
   }).join('');
 
   $('#no-tasks').classList.toggle('hidden', state.tasks.length > 0);
-
-  drawDungeon();
   save();
 }
 
-function addTask() {
+function addTask(event) {
+  event.preventDefault();
   const name = $('#task-name').value.trim();
   if (!name) return;
 
@@ -529,6 +968,7 @@ function addTask() {
 
   if (state.targetId === null) state.targetId = task.id;
   $('#task-name').value = '';
+  $('#message').textContent = `A ${monsterName(task)} appears!`;
   renderDungeon();
 }
 
@@ -565,6 +1005,7 @@ function startFight() {
   const seconds = $('#demo-mode').checked ? DEMO_SECONDS : FOCUS_MINUTES * 60;
   state.fight = { taskId: target.id, endsAt: Date.now() + seconds * 1000 };
   save();
+  playSound('start');
   runTimer();
 }
 
@@ -575,7 +1016,7 @@ function runTimer() {
     resetClock();
     return;
   }
-  $('#message').textContent = `Fighting ${task.name}... stay focused.`;
+  $('#message').textContent = `Fighting the ${monsterName(task)}... stay focused.`;
 
   const tick = () => {
     const secondsLeft = Math.max(0, Math.ceil((state.fight.endsAt - Date.now()) / 1000));
@@ -600,20 +1041,25 @@ function retreat() {
   state.fight = null;
   save();
   resetClock();
+  playSound('retreat');
   $('#message').textContent = 'You retreated. No damage dealt.';
 }
 
 function finishFight(task) {
   const damage = Math.round(FOCUS_MINUTES * damageMultiplier());
   task.hp -= damage;
+  if (!reduceMotion) hitEffect = { damage, startedAt: performance.now() };
 
   if (task.hp <= 0) {
     state.slain++;
     state.tasks = state.tasks.filter((t) => t.id !== task.id);
     state.targetId = state.tasks.length ? state.tasks[0].id : null;
-    $('#message').textContent = `Hit for ${damage}. ${task.name} is defeated!`;
+    if (!reduceMotion) defeatEffect = { startedAt: performance.now() };
+    playSound('defeat');
+    $('#message').textContent = `Hit for ${damage}. The ${monsterName(task)} is defeated, and "${task.name}" is done!`;
   } else {
     const mood = state.energy >= 100 ? 'well rested' : 'tired: reduced damage';
+    playSound('hit');
     $('#message').textContent = `Hit for ${damage} damage (${mood}).`;
   }
 
@@ -655,61 +1101,299 @@ function turnedInEarly() {
   return $('#force-result').value === 'auto' && minutesPastBedtime() < -ON_TIME_WINDOW;
 }
 
+// Everyone at the fire tonight, you first. onTime is true, false, or null
+// (not checked in yet).
+function getCampers() {
+  const tonight = state.tonight;
+  const you = { name: 'You', onTime: tonight ? tonight.you : null, early: tonight ? tonight.early : false };
+
+  // a night started with the practice friends stays with them
+  if (tonight && tonight.friends) return [you, ...tonight.friends];
+
+  if (state.camp) {
+    if (!campData) return [you];
+    const checkins = (tonight && campData.nights[tonight.night]) || {};
+    const friends = campData.players
+      .filter((player) => player.id !== state.camp.playerId)
+      .map((player) => {
+        const checkin = checkins[player.id];
+        return { name: player.name, onTime: checkin ? checkin.onTime : null, early: checkin ? checkin.early : false };
+      });
+    return [you, ...friends];
+  }
+
+  return [you, ...FRIENDS.map((name) => ({ name, onTime: null, early: false }))];
+}
+
+function camperStatus(camper) {
+  if (!state.tonight) return 'by the fire';
+  if (camper.onTime === null) return 'not checked in yet';
+  if (!camper.onTime) return 'still up';
+  return camper.early ? 'turned in early' : 'in bed on time';
+}
+
 function renderCamp() {
   const tonight = state.tonight;
 
-  if (!tonight) {
-    $('#party').innerHTML = '<li>Waiting for lights out.</li>';
-  } else {
-    const you = { name: 'You', onTime: tonight.you, early: tonight.early };
-    const rows = [you, ...tonight.friends];
-    $('#party').innerHTML = rows.map((r) => {
-      const status = r.early ? 'turned in early' : r.onTime ? 'in bed on time' : 'still up';
-      return `<li class="${r.onTime ? 'on-time' : 'late'}">${r.name}: ${status}</li>`;
-    }).join('');
-  }
+  $('#party').innerHTML = getCampers().map((camper) => {
+    const style = camper.onTime === null ? 'waiting' : camper.onTime ? 'on-time' : 'late';
+    return `<li class="${style}">${escapeHtml(camper.name)}: ${camperStatus(camper)}</li>`;
+  }).join('');
 
   $('#lights-out').classList.toggle('hidden', Boolean(tonight));
   $('#wake-up').classList.toggle('hidden', !tonight);
   $('#wake-up').classList.toggle('pulse', Boolean(tonight));
 
-  drawCamp();
+  renderCampPanel();
+  renderHistory();
 }
 
-function lightsOut() {
-  state.tonight = {
-    you: sleptOnTime(),
-    early: turnedInEarly(),
-    // the friends are random for now, real players would come from a backend
-    friends: FRIENDS.map((name) => ({ name, onTime: Math.random() < 0.65 }))
-  };
+async function lightsOut() {
+  const you = sleptOnTime();
+  state.tonight = { night: nightKey(new Date()), you, early: you && turnedInEarly() };
+
+  if (state.camp) {
+    state.tonight.campCode = state.camp.code;
+    await sendCheckin();
+  } else {
+    // practice friends: random for now, real players come from the camp server
+    state.tonight.friends = FRIENDS.map((name) => ({ name, onTime: Math.random() < 0.65, early: false }));
+  }
+
   save();
+  playSound('lightsOut');
   renderCamp();
 }
 
-function wakeUp() {
-  const { you, friends } = state.tonight;
-  const onTimeCount = (you ? 1 : 0) + friends.filter((f) => f.onTime).length;
+async function wakeUp() {
+  if (cutscene) return;
+  const tonight = state.tonight;
 
-  state.energy = you ? 100 : 60;
-  state.bonus = onTimeCount === 4;
-  state.fire = onTimeCount / 4;
+  if (state.camp && !tonight.friends) {
+    if (tonight.unsynced) await sendCheckin();
+    await refreshCamp();
+  }
 
-  const lines = [you ? 'You hit your bedtime and woke up ready.' : 'You stayed up late and woke up groggy.'];
-  friends.forEach((f) => {
-    lines.push(f.onTime ? `${f.name} kept the fire going.` : `${f.name} fell asleep on watch.`);
+  // friends who never checked in count as not on time
+  const campers = getCampers();
+  const onTimeCount = campers.filter((camper) => camper.onTime === true).length;
+  const campSize = campers.length;
+  const fullCamp = campSize > 1 && onTimeCount === campSize;
+  const fireBefore = state.fire;
+
+  state.energy = tonight.you ? 100 : 60;
+  state.bonus = fullCamp;
+  state.fire = onTimeCount / campSize;
+
+  const lines = [];
+  if (!tonight.you) lines.push('You stayed up late and woke up groggy.');
+  else if (tonight.early) lines.push('You turned in early and woke up ready.');
+  else lines.push('You hit your bedtime and woke up ready.');
+
+  campers.slice(1).forEach((friend) => {
+    if (friend.onTime === true) lines.push(`${friend.name} kept the fire going.`);
+    else if (friend.onTime === false) lines.push(`${friend.name} fell asleep on watch.`);
+    else lines.push(`${friend.name} never made it to camp. The fire missed them.`);
   });
 
-  if (onTimeCount === 4) lines.push('Full camp! The fire roared and everyone gets +20% damage today.');
-  else if (onTimeCount === 3) lines.push('The fire held steady.');
-  else lines.push('The fire burned low. No bonus today.');
+  if (fullCamp) lines.push('Full camp! The fire roared and everyone gets +20% damage today.');
+  else if (campSize === 1) lines.push('Invite friends to your camp to earn the camp bonus.');
+  else if (onTimeCount === campSize - 1) lines.push('So close! The fire held steady.');
+  else lines.push('The fire burned low. No bonus today, but tonight is a fresh start.');
 
-  $('#recap').classList.remove('hidden');
-  $('#recap').innerHTML = '<h2>Morning recap</h2>' + lines.map((l) => `<div>${escapeHtml(l)}</div>`).join('');
+  recordNight({ night: tonight.night || nightKey(new Date()), you: tonight.you, early: tonight.early, onTimeCount, campSize });
 
   state.tonight = null;
+  save();
+  playSound('wake');
+  startCutscene(campers, fireBefore, state.fire, lines);
   renderDungeon();
   renderCamp();
+}
+
+// ---------------------------------------------------------------
+// Sleep history
+// ---------------------------------------------------------------
+function recordNight(entry) {
+  // with real time, waking up twice in one night replaces the earlier entry.
+  // demo runs always add a new column so judges can watch the chart fill up.
+  const usingRealTime = $('#force-result').value === 'auto';
+  const history = state.history.filter((old) => !(usingRealTime && old.night === entry.night));
+  history.push(entry);
+  state.history = history.slice(-HISTORY_NIGHTS);
+}
+
+function describeNight(entry) {
+  const you = entry.you ? (entry.early ? 'turned in early' : 'on time') : 'late';
+  return `${weekdayOf(entry.night)}: you ${you}, ${entry.onTimeCount} of ${entry.campSize} on time`;
+}
+
+function renderHistory() {
+  const history = state.history;
+  if (!history.length) {
+    $('#history').innerHTML = '<p class="subtitle">No nights yet. Your first wake up starts the chart.</p>';
+    return;
+  }
+
+  const columns = history.map((entry) => {
+    const friendsOnTime = entry.onTimeCount - (entry.you ? 1 : 0);
+    const blocks = [`<i class="block ${entry.you ? 'you' : ''}"></i>`];
+    for (let i = 1; i < entry.campSize; i++) {
+      blocks.push(`<i class="block ${i <= friendsOnTime ? 'friend' : ''}"></i>`);
+    }
+    const yourLabel = entry.you ? (entry.early ? 'early' : 'zz') : 'late';
+
+    return `
+      <div class="night" title="${escapeHtml(describeNight(entry))}">
+        <div class="night-blocks">${blocks.join('')}</div>
+        <span class="night-you ${entry.you ? 'on-time' : 'late'}">${yourLabel}</span>
+        <span class="night-day">${weekdayOf(entry.night)}</span>
+      </div>`;
+  });
+
+  // empty columns keep the chart the same width while it fills up
+  while (columns.length < HISTORY_NIGHTS) columns.push('<div class="night"></div>');
+
+  const tableRows = history.map((entry) => `<li>${escapeHtml(describeNight(entry))}</li>`).join('');
+  $('#history').innerHTML = `
+    <div class="history" aria-hidden="true">${columns.join('')}</div>
+    <ul class="sr-only">${tableRows}</ul>`;
+}
+
+// ---------------------------------------------------------------
+// Shared camps (only when the game is served by server.js)
+// ---------------------------------------------------------------
+let serverOnline = false;
+let campData = null;    // the latest copy of your camp from the server
+
+async function api(path, body) {
+  const options = body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    : {};
+  const response = await fetch(API + path, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+
+function campMessage(text) {
+  $('#camp-message').textContent = text;
+}
+
+async function checkServer() {
+  if (!API) return;
+  try {
+    await api('/health');
+    serverOnline = true;
+  } catch (err) {
+    serverOnline = false;
+  }
+  if (serverOnline && state.camp) await refreshCamp();
+  renderCamp();
+}
+
+async function refreshCamp() {
+  if (!state.camp || !serverOnline) return;
+  try {
+    const { camp } = await api(`/camps/${state.camp.code}`);
+    campData = camp;
+  } catch (err) {
+    if (err.message === 'Camp not found') {
+      state.camp = null;
+      campData = null;
+      save();
+      campMessage('That camp no longer exists, so the practice friends are back.');
+    }
+  }
+}
+
+async function sendCheckin() {
+  const tonight = state.tonight;
+  try {
+    const { camp } = await api(`/camps/${state.camp.code}/checkins`, {
+      playerId: state.camp.playerId,
+      secret: state.camp.secret,
+      night: tonight.night,
+      onTime: tonight.you,
+      early: tonight.early
+    });
+    campData = camp;
+    delete tonight.unsynced;
+  } catch (err) {
+    tonight.unsynced = true;
+    campMessage(`Couldn't reach the camp (${err.message}). Your check-in is saved and will be sent at wake up.`);
+  }
+}
+
+function joinedCamp(data, name) {
+  state.camp = { code: data.camp.code, playerId: data.playerId, secret: data.secret, name };
+  campData = data.camp;
+  save();
+  campMessage('');
+  renderCamp();
+}
+
+async function createCamp() {
+  const name = $('#camper-name').value.trim();
+  if (!name) return campMessage('Pick a name first so friends know who you are.');
+  try {
+    joinedCamp(await api('/camps', { name }), name);
+    campMessage('Camp started! Share the code or the invite link with up to 3 friends.');
+  } catch (err) {
+    campMessage(err.message);
+  }
+}
+
+async function joinCamp() {
+  const name = $('#camper-name').value.trim();
+  const code = $('#join-code').value.trim().toUpperCase();
+  if (!name) return campMessage('Pick a name first so friends know who you are.');
+  if (!code) return campMessage('Enter the camp code your friend shared.');
+  try {
+    joinedCamp(await api(`/camps/${code}/join`, { name }), name);
+  } catch (err) {
+    campMessage(err.message);
+  }
+}
+
+async function leaveCamp() {
+  try {
+    await api(`/camps/${state.camp.code}/leave`, { playerId: state.camp.playerId, secret: state.camp.secret });
+  } catch (err) {
+    // leaving locally is fine even if the server is unreachable
+  }
+  state.camp = null;
+  campData = null;
+  save();
+  campMessage('You left the camp. Mira, Sam and Jo are back.');
+  renderCamp();
+}
+
+async function copyInvite() {
+  const link = `${location.origin}${location.pathname}?camp=${state.camp.code}`;
+  try {
+    await navigator.clipboard.writeText(link);
+    campMessage('Invite link copied.');
+  } catch (err) {
+    campMessage(`Share this link: ${link}`);
+  }
+}
+
+function renderCampPanel() {
+  const inCamp = Boolean(state.camp);
+  $('#camp-offline').classList.toggle('hidden', serverOnline || inCamp);
+  $('#camp-join').classList.toggle('hidden', !serverOnline || inCamp);
+  $('#camp-joined').classList.toggle('hidden', !inCamp);
+
+  // switching camps mid-night would mix up tonight's check-ins
+  const midNight = Boolean(state.tonight);
+  ['#create-camp', '#join-camp', '#leave-camp'].forEach((id) => { $(id).disabled = midNight; });
+
+  if (inCamp) {
+    $('#camp-code').textContent = state.camp.code;
+    const names = campData ? campData.players.map((player) => player.name) : [state.camp.name];
+    $('#camp-members').textContent = `Campers: ${names.join(', ')} (${names.length} of 4 seats)`;
+  }
 }
 
 // ---------------------------------------------------------------
@@ -721,20 +1405,25 @@ function showTab(name) {
   $('#camp').classList.toggle('hidden', showingDay);
   $('#tab-day').classList.toggle('active', showingDay);
   $('#tab-camp').classList.toggle('active', !showingDay);
-
-  if (showingDay) drawDungeon();
-  else renderCamp();
+  if (!showingDay) renderCamp();
 }
 
 $('#tab-day').addEventListener('click', () => showTab('day'));
 $('#tab-camp').addEventListener('click', () => showTab('camp'));
-$('#add-task').addEventListener('click', addTask);
+$('#sound-toggle').addEventListener('click', toggleSound);
+$('#music-toggle').addEventListener('click', toggleMusic);
+$('#task-form').addEventListener('submit', addTask);
 $('#task-list').addEventListener('click', targetTask);
 $('#start').addEventListener('click', startFight);
 $('#retreat').addEventListener('click', retreat);
 $('#demo-mode').addEventListener('change', () => { if (!state.fight) resetClock(); });
 $('#lights-out').addEventListener('click', lightsOut);
 $('#wake-up').addEventListener('click', wakeUp);
+$('#skip-cutscene').addEventListener('click', endCutscene);
+$('#create-camp').addEventListener('click', createCamp);
+$('#join-camp').addEventListener('click', joinCamp);
+$('#leave-camp').addEventListener('click', leaveCamp);
+$('#copy-invite').addEventListener('click', copyInvite);
 
 $('#bedtime').value = state.bedtime;
 $('#bedtime').addEventListener('change', (e) => {
@@ -742,9 +1431,34 @@ $('#bedtime').addEventListener('change', (e) => {
   save();
 });
 
+// browsers only allow audio after a click, so saved music waits for one
+document.addEventListener('pointerdown', startMusic, { once: true });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopMusic();
+  else startMusic();
+});
+
+setInterval(async () => {
+  if (state.camp && serverOnline && !document.hidden) {
+    await refreshCamp();
+    renderCamp();
+  }
+}, CAMP_POLL_MS);
+
+// an invite link opens straight onto the camp with the code filled in
+const invitedTo = new URLSearchParams(location.search).get('camp');
+if (invitedTo) $('#join-code').value = invitedTo.toUpperCase();
+
+// evenings open on the camp, since that's where the night happens
+const hour = new Date().getHours();
+if (invitedTo || state.tonight || hour >= 20 || hour < 5) showTab('camp');
+
+renderToggles();
 renderDungeon();
 renderCamp();
 if (state.fight) runTimer();
+checkServer();
+requestAnimationFrame(animate);
 </script>
 </body>
 </html>
